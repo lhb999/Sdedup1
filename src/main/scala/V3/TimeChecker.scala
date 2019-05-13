@@ -48,4 +48,12 @@ class TimeChecker {
       println(timer_labels(i) + ": " + (timers(i)-timers(0)))
     }
   }
+
+  def getElapsedTimeAsMinSeconds() = {
+      val res = ((timers.last - timers.head) / 1000).toInt
+    val min = res / 60
+    val sec = res % 60
+    val ms = s"${min}m ${sec}s"
+    ms
+  }
 }

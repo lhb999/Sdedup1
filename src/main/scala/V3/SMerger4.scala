@@ -9,64 +9,83 @@ import scala.collection.mutable.ArrayBuffer
 import scala.io.Source
 import scala.sys.process._
 
-object SMerger {
+object SMerger4 {
+  var fileIdx = 0
   def dirSlash(dir:String) = {
     if(dir.endsWith("/")) dir.substring(0, dir.length-1)
     else dir
   }
-  def setCmdWithDir1(dirname:String, partname:String, samtools:String, rmap:mutable.HashMap[String, Array[String]], sambam:String="bam") = {
+  def setCmdWithDir1(dirname:String, rname:String, samtools:String, rmap:mutable.HashMap[String, Array[String]],
+                     sambam:String="bam", thread:Int=4):mutable.Iterable[String] = {
     //println(s"serch partname : ${partname}")
-    val rname = rmap.get(partname).get(0)
-    val files1 = s"find $dirname -type f ! -size 0 -name $partname".!!.split("\n")
-
-    val fileLen = files1.length
-    val files = files1.mkString(" ")
-    val cmd = s"$samtools merge -O ${sambam} $dirname/$partname-$rname.merged $files"
-    cmd
+    val rnameFiles = rmap.get(rname).get
+    if(rname.equals("chr8_gl000197_random")) {
+      println(rnameFiles.mkString("\n"))
+    }
+    //    val files1 = s"find $dirname -type f ! -size 0 -name $rnameFiles".!!.split("\n")
+    val fileLen = rnameFiles.length
+    val arr = new ArrayBuffer[String]()
+    var i = 0;
+    val size = 5
+    var loop = 1;
+    var start = 0;
+    var exitv = false
+    while(start < fileLen) {
+      val end =
+        if(start + size > fileLen) {
+          fileLen
+        }
+        else {
+          start + size
+        }
+      val filex = rnameFiles.slice(start, end).mkString(" ")
+      val cmd = s"$samtools merge -@ ${thread} -O ${sambam} $dirname/${"%06d".format(fileIdx)}-$rname.merged $filex"
+      println(cmd)
+      //        println(s"size info : ${fileLen}, loop : $loop/${fileLen/5},slice from ${last} to ${lsize}")
+      //        println(files1.slice(last, lsize).mkString("\n"))
+      //        println(s"")
+      start =  end
+      loop += 1
+      fileIdx += 1
+      arr.+=(cmd)
+    }
+    arr
   }
   def setCmdWithDir2(rnameWithPath:String, files:String, samtools:String, sambam:String="bam") = {
-    val cmd = s"$samtools merge -O ${sambam} $rnameWithPath.${sambam} $files"
+    val cmd = s"$samtools merge -@ 10 -O ${sambam} $rnameWithPath.${sambam} $files"
     cmd
   }
   def main(args: Array[String]): Unit = {
-    if(args.length < 3) {
-      println("usage sparkfrbs [dirPath] [samtoolsPath] [sam or bam]")
+    if(args.length < 4) {
+      println("usage sparkfrbs [dirPath] [samtoolsPath] [sam or bam] [samtools thread num]")
       System.exit(1)
     }
     val dirPath = dirSlash(args(0))
     val samtools = args(1)
     val sambam = args(2)
+    val thread = args(3).toInt
 
-    val dirs =  s"ls $dirPath".!!.split("\\s+").filter(_.startsWith("stream"))
+    val tc = new TimeChecker
+
+    println(s"Input Parh is ${dirPath}")
+
+    val dirs =  s"ls $dirPath".!!.split("\\s+").filter(_.startsWith("loop"))
 
     val cmdArr = ArrayBuffer[String]()
-    val fileInfo = mutable.HashMap[String, Int]()
-    val rnameMap = mutable.HashMap[String, Array[String]]()
 
-    dirs.foreach{dir =>
-      val path = s"$dirPath/$dir"
-      val proc1 = s"find $path -name part-* ! -size 0 -ls".!!.split("\n")
-
-      proc1.foreach{file =>
-        val spl = file.split("\\s+")
-        val size = spl(6).toInt
-        val fullname = spl(10).split("/")
-        val fname = fullname(fullname.length-1)
-
-        if(!fileInfo.isDefinedAt(fname)) fileInfo.put(fname, size)
-        else {
-          val old = fileInfo.get(fname).get
-          val newSize = size+old
-          fileInfo.update(fname, newSize)
-        }
-      }
-    }
-
+    val rnameMap = new mutable.HashMap[String, Array[String]]()
     val proc2 = s"find $dirPath -name part.info".!!.split("\n")
     proc2.foreach{info =>
+      var cnt = 0
       val filename = info
-
+      val curdir = filename.split("/").slice(0, filename.split("/").size-1).mkString("/")
       for (line <- Source.fromFile(filename).getLines) {
+        if (cnt == 0) {
+          println(s"file name is ${filename}")
+          println(s"curdir is ${curdir}")
+          cnt += 1
+        }
+
         if(!line.isEmpty) {
           val spl = line.split("\\s+")
           val partname = spl(0)
@@ -74,74 +93,49 @@ object SMerger {
           if(rnames.length > 1) {
             println(s"INFO :: ${partname} has more than 2 rname : ${rnames.mkString(", ")}")
           }
+
           rnames.foreach{ rname =>
-            if(!rnameMap.isDefinedAt(partname)) {
+            if(!rnameMap.isDefinedAt(rname)) {
+              //              println(s"new rname ${rname}")
               //println(s"map setted key : ${partname} value : ${rname}")
-              rnameMap.+=((partname, Array(rname)))
+              rnameMap.put(rname, Array(curdir+"/"+partname))
             }
             else {
-              val oldData = rnameMap.get(partname).get
-              if(!oldData.contains(rname)) {
-                val newData = oldData ++ Array(rname)
-                rnameMap.update(partname, newData)
-              }
+              val oldData = rnameMap.get(rname).get
+              val newData = oldData ++ Array(curdir+"/"+partname)
+              rnameMap.update(rname, newData)
             }
           }
         }
       }
     }
 
-
-//    val uPath = s"$dirPath/unmapped"
-//    println(s"Upath : $uPath")
-//    println(s"cmd : find $uPath -name part-* ! -size 0 -ls")
-//    val proc3 = s"find $uPath -name part-* ! -size 0 -ls".!!.split("\n")
-//    proc3.foreach{ file =>
-//      val spl = file.split("\\s+")
-//      val size = spl(6).toInt
-//      val fullname = spl(10)
-//      println(s"cmd : cat $fullname >> $uPath/header")
-//      val cmd = (s"cat $fullname" #>> new File(s"$uPath/header")).!!
-//    }
-//    s"cp $uPath/header $dirPath/unMapped.sam".!!
-
     var i = 0
     var toggle = true
 
-    val fsize = fileInfo.size
 
+//    println(s"rnames #: ${rnameMap.keys.size}: \n"+rnameMap.keys.mkString("\n"))
 
-    while(i < fsize) {
-      val cmd =
-        if(toggle) {
-          fileInfo.maxBy(_._2)
-        }
-        else {
-          fileInfo.minBy(_._2)
-        }
-      fileInfo.remove(cmd._1)
+    val rebuildedMap = new mutable.HashMap[ArrayBuffer[String], Seq[String]]()
 
-      val partName = cmd._1
+    val filtered = rnameMap.filter(_._2.length > 1) // 2개 이상의 파티션에 된 애들
 
-      val res = setCmdWithDir1(dirPath, partName, samtools, rnameMap, sambam)
+    val tt = filtered.keys.foreach{rname =>
 
-      cmdArr.+=(res)
-      toggle = !toggle
-      i = i+1
+    }
+    rnameMap.keys.foreach{ rname =>
+      val res = setCmdWithDir1(dirPath, rname, samtools, rnameMap, sambam, thread)
+      res.foreach(x => cmdArr.+=(x))
     }
 
     val sparkConf = new SparkConf().setAppName("SMerger")
     val sc = new SparkContext(sparkConf)
-
-    println(cmdArr.mkString("\n"))
-
     val cmdList = sc.makeRDD(cmdArr)
 
     cmdList.repartition(1024)
 
-    val tc = new TimeChecker
-
     tc.checkTime("start")
+    println("Merge step 1 start ...")
     val act = cmdList.mapPartitionsWithIndex{(idx, itr) =>
       import scala.sys.process._
 
@@ -152,14 +146,12 @@ object SMerger {
     }
     act.count()
 
-
-
-    println("step2")
+    println("Merge step 2 start ...")
     val proc4 = (s"ls $dirPath" #| "grep merged").!!.split("\n")
 
     var map3 = mutable.Map[String, Array[String]]()
     proc4.foreach{fname =>
-      val rname = fname.split("-")(2).dropRight(7)
+      val rname = fname.split("-")(1).dropRight(7)
       val path = s"$dirPath/$fname"
 
       if(map3.isDefinedAt(rname)) {
@@ -188,9 +180,10 @@ object SMerger {
       val file = x._2.mkString(" ")
       val rnameWithPath = s"$dirPath/$rname"
       val cmd = s"mv $file $rnameWithPath.${sambam}"
-      println(cmd)
+      //println(cmd)
       cmd.!
     }
+    println("Merge step 3 start ...")
 
     val mergeList = sc.makeRDD(cmdList2).repartition(1024)
     val act2 = mergeList.mapPartitionsWithIndex{(idx, itr) =>
@@ -201,8 +194,6 @@ object SMerger {
       itr
     }
     act2.count()
-
-
 
     tc.checkTime("end")
     tc.printElapsedTime()

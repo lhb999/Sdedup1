@@ -1,8 +1,9 @@
 package V3
 
-case class SAM4(qname:String, flag:String, rname:String, pos:Long, others:Array[String])
+
 
 object String2SAM {
+  case class SAM4(qname:String, flag:String, rname:String, pos:Long, others:Array[String])
   def markDup(flag:Int) = { flag | 0x400 }
   def markDups(sam:SAM4) = {
     val marked = markDup(sam.flag.toInt).toString

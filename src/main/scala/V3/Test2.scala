@@ -15,24 +15,24 @@ object Test2 {
       System.exit(1)
     }
 
-    val hashPtnr = new spark.HashPartitioner(2048)
+
     val sparkConf = new SparkConf().setAppName("UNKNOWN-DEDUP")
     sparkConf.set("spark.executor.memoryOverhead", "8g")
     val sc = new SparkContext(sparkConf)
 
     val filePath = args(0)
     val outPath = args(1)
+    val partNum = args(2).toInt
+    val hashPtnr = new spark.HashPartitioner(partNum)
 
-    val partNum = 2048
-
-    val Spark = SparkSession
-      .builder()
-      .appName("Spark SQL basic example")
-      .config("spark.some.config.option", "some-value")
-      .getOrCreate()
+//    val Spark = SparkSession
+//      .builder()
+//      .appName("Spark SQL basic example")
+//      .config("spark.some.config.option", "some-value")
+//      .getOrCreate()
 
     // For implicit conversions like converting RDDs to DataFrames
-    import Spark.implicits._
+//    import Spark.implicits._
 
     //    val key = sc.textFile(filePath, partNum).flatMap(_.split("\n")).map(x => ())
 
@@ -56,13 +56,13 @@ object Test2 {
       val v = a._2 + b._2 + 10
       val res = (a._1, v)
       res
-    }.filter(_._2._2 > 2).map(x => (x._1, (x._2._2, Array[SAM4]()))).cache()
+    }.filter(_._2._2 > 2).map(x => (x._1, (x._2._2, Seq.empty[SAM4]))).cache()
 
     println(s"READ PATH IS ${filePath}")
 
     val samPathRegex = filePath + "*.sbl"
     val sam = sc.textFile(samPathRegex, partNum).filter(!_.startsWith("@")).flatMap(_.split("\n"))
-      .map(x => String2SAM.parseToSAM(x)).map(x => (x.qname, (0,Array[SAM4](x))))
+      .map(x => String2SAM.parseToSAM(x)).map(x => (x.qname, (0,Seq(x))))
 
 
     val rdd = sam.union(key).reduceByKey{ (a,b) =>
@@ -84,6 +84,9 @@ object Test2 {
       paired
     }
       .flatMap(x => x)
+//      .sortByKey()
+//      .sortByKey(true,partNum)
+//      .repartition(partNum)
       .partitionBy(hashPtnr)
       .map(x => x._2)
       .mapPartitions { samIter =>
