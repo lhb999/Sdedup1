@@ -1,7 +1,7 @@
 package V3
 
 
-import java.io.{File, FileWriter}
+import java.io.{BufferedWriter, File, FileWriter}
 
 import org.apache.spark.sql.SparkSession
 import V3.Sdedup.getString
@@ -92,11 +92,19 @@ object Test11 {
 
     val sc = new SparkContext(sparkConf)
 
+    import org.apache.spark.sql.SparkSession
+
+    val spark = SparkSession
+      .builder()
+      .getOrCreate()
+
+    // For implicit conversions like converting RDDs to DataFrames
+    import spark.implicits._
+
     val filePath = args(0)
     val outPath = args(1)
     val partNum = args(2).toInt
     val stride = args(3).toInt
-    val hashPtnr = new spark.HashPartitioner(partNum)
     val log = LogManager.getRootLogger
 
     val tc = new TimeChecker
@@ -225,27 +233,28 @@ object Test11 {
       val rpart = new RangePartitioner(partNum, samWithRnameKey)
 
       val rdd2 = samWithRnameKey.partitionBy(rpart)
-        .map(_._2)
-      val makeinfo = rdd2.mapPartitionsWithIndex{ (idx, sam) =>
-        if(!sam.isEmpty){
-          val dirPath = s"${ablsolFileOutputPath}/loop${"%03d".format(lcnt)}/".replaceAll("//", "/")
-          new File(dirPath).mkdirs()
+        .map(x => (x._2.rname, x._2)).toDF().write.save(s"${ablsolFileOutputPath}/loop${"%03d".format(lcnt)}/")
 
-          val head = Seq(broadcastHeader.value.mkString("\n")).iterator
-          val grouped = sam.map(x => (x.rname, x)).toSeq.groupBy(x => x._1).map{ iter =>
-            val rname = iter._1
-            val records = iter._2.map(x => (x._2)).sortBy(_.pos).map(x => getString(x))
-            val data = (head ++ records).mkString("\n")
-            val rnameFilePath = s"${dirPath}/${rname}-${idx}.sam".replaceAll("//", "/")
-            val partInfoFile = new FileWriter(rnameFilePath, true)
-            partInfoFile.append(data)
-            partInfoFile.flush()
-            partInfoFile.close()
-          }
-        }
-        sam
-      }
-      makeinfo.count()
+//      val makeinfo = rdd2.mapPartitionsWithIndex{ (idx, sam) =>
+//        if(!sam.isEmpty){
+//          val dirPath = s"${ablsolFileOutputPath}/loop${"%03d".format(lcnt)}/".replaceAll("//", "/")
+//          new File(dirPath).mkdirs()
+//          val head = Seq(broadcastHeader.value.mkString("\n")).iterator
+//          val grouped = sam.map(x => (x.rname, x)).toSeq.groupBy(x => x._1).map{ iter =>
+//            val rname = iter._1
+//            val records = iter._2.map(x => (x._2)).sortBy(_.pos).map(x => getString(x))
+//            val data = (head ++ records).mkString("\n")
+//            val rnameFilePath = s"${dirPath}/${idx}-${rname}.sam".replaceAll("//", "/")
+//            val partInfoFile = new BufferedWriter(new FileWriter(rnameFilePath, true)) //=> bufferedwriter로 교체
+//            partInfoFile.write(data)
+////            partInfoFile.flush()
+//            partInfoFile.close()
+//          }
+//        }
+//        sam
+//      }
+
+//      makeinfo.count()
       ttc.checkTime()
       val minsec = ttc.getElapsedTimeAsMinSeconds
       println(s" ===> LOOP : ${lcnt} INTERVAL : ${minsec}<===")
