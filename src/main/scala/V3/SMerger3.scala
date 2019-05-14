@@ -55,6 +55,11 @@ object SMerger3 {
     val cmd = s"$samtools merge -@ 10 -O ${sambam} $rnameWithPath.${sambam} $files"
     cmd
   }
+  def setCmdSplitPart(rnameWithPath:String, files:String, samtools:String, sambam:String="bam") = {
+    val xmd = s"$samtools split -@ 4 -O ${sambam} $rnameWithPath.${sambam} $files"
+    val cmd = s"$samtools merge -@ 10 -O ${sambam} $rnameWithPath.${sambam} $files"
+    cmd
+  }
   def main(args: Array[String]): Unit = {
     if(args.length < 4) {
       println("usage sparkfrbs [dirPath] [samtoolsPath] [sam or bam] [samtools thread num]")
@@ -75,6 +80,9 @@ object SMerger3 {
 
     val rnameMap = new mutable.HashMap[String, Array[String]]()
     val proc2 = s"find $dirPath -name part.info".!!.split("\n")
+
+    val splitArr = new mutable.ArrayBuffer[String]()
+
     proc2.foreach{info =>
       var cnt = 0
       val filename = info
@@ -85,13 +93,13 @@ object SMerger3 {
           println(s"curdir is ${curdir}")
           cnt += 1
         }
-
         if(!line.isEmpty) {
           val spl = line.split("\\s+")
           val partname = spl(0)
           val rnames = spl(1).split(",")
           if(rnames.length > 1) {
             println(s"INFO :: ${partname} has more than 2 rname : ${rnames.mkString(", ")}")
+            splitArr.+=(filename)
           }
 
           rnames.foreach{ rname =>

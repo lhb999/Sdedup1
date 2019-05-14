@@ -140,8 +140,8 @@ object Test11 {
     val bKey = sc.broadcast(key)
 
     //    DEBUG DEBUG DEBUG
-//    val total = key.values.foldLeft(0)(_+_)
-//    println(s"deduped : ${total} / ${key1.count()}")
+    //    val total = key.values.foldLeft(0)(_+_)
+    //    println(s"deduped : ${total} / ${key1.count()}")
 
     tc.checkTime("key loaded")
     tc.printElapsedTime()
@@ -200,61 +200,110 @@ object Test11 {
           }
           samIter
         }
-      markedSamWithCounts.cache() //marked sam
+//      markedSamWithCounts.cache() //marked sam
 
-//      val markedCount = markedSamWithCounts.map(_._2._1).fold(0)(_+_)
-//      val thisRecords = markedSamWithCounts.map(_._1).count()
-//      totalRecords += thisRecords
-//      println("deduped : "+markedCount)
-//      println("Total Records : " + totalRecords)
+      //      val markedCount = markedSamWithCounts.map(_._2._1).fold(0)(_+_)
+      //      val thisRecords = markedSamWithCounts.map(_._1).count()
+      //      totalRecords += thisRecords
+      //      println("deduped : "+markedCount)
+      //      println("Total Records : " + totalRecords)
 
-      val samWithRnameKey = markedSamWithCounts.map{ record =>
-        //partitioning, write
-        // ._1 qname
-        record._2._2
-      }.flatMap(x => x)
-        .map{ sam =>
-          val bcMap = broadcastMap.value
-          val idxedRname = bcMap.get(sam.rname).getOrElse(0) * 10000
-          val dividedPos = (sam.pos % 1000).toInt
-          val key = idxedRname + dividedPos
-          val res = (key, sam)
-          //
-          //        val key1 = sam.rname
-          //        val key2 = "%020d".format(sam.pos)
-          //        val key3 = key1+key2
-          //        val res2 = (key3, sam)
+      //      val samWithRnameKey = markedSamWithCounts.map{ record =>
+      //        //partitioning, write
+      //        // ._1 qname
+      //        record._2._2
+      //      }.flatMap(x => x)
+      //        .map{ sam =>
+      //          val bcMap = broadcastMap.value
+      //          val idxedRname = bcMap.get(sam.rname).getOrElse(0) * 10000
+      //          val dividedPos = (sam.pos % 1000).toInt
+      //          val key = idxedRname + dividedPos
+      //          val res = (key, sam)
+      //          //
+      //          //        val key1 = sam.rname
+      //          //        val key2 = "%020d".format(sam.pos)
+      //          //        val key3 = key1+key2
+      //          //        val res2 = (key3, sam)
+      //
+      //          //        println(s"info : ${sam.rname}, ${sam.pos}, ${key}")
+      //          //        res2
+      //          res
+      //        }
 
-          //        println(s"info : ${sam.rname}, ${sam.pos}, ${key}")
-          //        res2
-          res
+      //      val rpart = new RangePartitioner(partNum, samWithRnameKey)
+
+      val rdd2 = markedSamWithCounts.map{x =>
+        val records = x._2._2
+        (records.head.rname, records)
+      }
+      val rpart = new RangePartitioner(partNum, rdd2)
+
+      val cnt = rdd2.partitionBy(rpart).mapPartitionsWithIndex{ (idx, sam) =>
+        val head = Seq(broadcastHeader.value.mkString("\n")).iterator
+        var loop = 0;
+        val t = sam.foreach{ x =>
+          val dirPath = s"${ablsolFileOutputPath}/loop${"%03d".format(lcnt)}/".replaceAll("//", "/")
+          new File(dirPath).mkdirs()
+          val rname = x._1
+          val records = x._2.sortBy(_.pos).map(x => getString(x))
+          val data = (head ++ records).mkString("\n")
+          val rnameFilePath = s"${dirPath}/${rname}/${"%05d".format(idx)}-${"%03d".format(loop)}-${rname}.sam".replaceAll("//", "/")
+//          val partInfoFile = new BufferedWriter(new FileWriter(rnameFilePath, true)) //=> bufferedwriter로 교체
+          println(rnameFilePath)
+          loop+=1
+//          partInfoFile.write(data)
+//          partInfoFile.flush()
+//          partInfoFile.close()
         }
+        sam
+      }.count()
+      println("rdd2 : "+rdd2)
 
-      val rpart = new RangePartitioner(partNum, samWithRnameKey)
-
-      val rdd2 = samWithRnameKey.partitionBy(rpart)
-        .map(x => (x._2.rname, x._2)).toDF().write.save(s"${ablsolFileOutputPath}/loop${"%03d".format(lcnt)}/")
-
-//      val makeinfo = rdd2.mapPartitionsWithIndex{ (idx, sam) =>
-//        if(!sam.isEmpty){
-//          val dirPath = s"${ablsolFileOutputPath}/loop${"%03d".format(lcnt)}/".replaceAll("//", "/")
-//          new File(dirPath).mkdirs()
-//          val head = Seq(broadcastHeader.value.mkString("\n")).iterator
-//          val grouped = sam.map(x => (x.rname, x)).toSeq.groupBy(x => x._1).map{ iter =>
-//            val rname = iter._1
-//            val records = iter._2.map(x => (x._2)).sortBy(_.pos).map(x => getString(x))
-//            val data = (head ++ records).mkString("\n")
-//            val rnameFilePath = s"${dirPath}/${idx}-${rname}.sam".replaceAll("//", "/")
-//            val partInfoFile = new BufferedWriter(new FileWriter(rnameFilePath, true)) //=> bufferedwriter로 교체
-//            partInfoFile.write(data)
-////            partInfoFile.flush()
-//            partInfoFile.close()
+//      val rpart = new RangePartitioner(partNum, rdd2)
+//      val rdd3 = rdd2.partitionBy(rpart).flatMap(_._2)
+//        .mapPartitionsWithIndex{ (idx, sam) =>
+//          if(!sam.isEmpty){
+//            val dirPath = s"${ablsolFileOutputPath}/loop${"%03d".format(lcnt)}/".replaceAll("//", "/")
+//            new File(dirPath).mkdirs()
+//            val head = Seq(broadcastHeader.value.mkString("\n")).iterator
+//            val grouped = sam.map(x => (x.rname, x)).toSeq.groupBy(x => x._1).map{ iter =>
+//              val rname = iter._1
+//              val records = iter._2.map(x => (x._2)).sortBy(_.pos).map(x => getString(x))
+//              val data = (head ++ records).mkString("\n")
+//              val rnameFilePath = s"${dirPath}/${idx}-${rname}.sam".replaceAll("//", "/")
+//              val partInfoFile = new BufferedWriter(new FileWriter(rnameFilePath, true)) //=> bufferedwriter로 교체
+//              partInfoFile.write(data)
+//              partInfoFile.flush()
+//              partInfoFile.close()
+//            }
 //          }
+//          sam
 //        }
-//        sam
-//      }
+//
+//      rdd3.count()
 
-//      makeinfo.count()
+      //        .toDF().write.save(s"test/n4/sdedup/loop${"%03d".format(lcnt)}/")
+      //      val makeinfo = rdd2
+      //      .mapPartitionsWithIndex{ (idx, sam) =>
+      //        if(!sam.isEmpty){
+      //          val dirPath = s"${ablsolFileOutputPath}/loop${"%03d".format(lcnt)}/".replaceAll("//", "/")
+      //          new File(dirPath).mkdirs()
+      //          val head = Seq(broadcastHeader.value.mkString("\n")).iterator
+      //          val grouped = sam.map(x => (x.rname, x)).toSeq.groupBy(x => x._1).map{ iter =>
+      //            val rname = iter._1
+      //            val records = iter._2.map(x => (x._2)).sortBy(_.pos).map(x => getString(x))
+      //            val data = (head ++ records).mkString("\n")
+      //            val rnameFilePath = s"${dirPath}/${idx}-${rname}.sam".replaceAll("//", "/")
+      //            val partInfoFile = new BufferedWriter(new FileWriter(rnameFilePath, true)) //=> bufferedwriter로 교체
+      //            partInfoFile.write(data)
+      ////            partInfoFile.flush()
+      //            partInfoFile.close()
+      //          }
+      //        }
+      //        sam
+      //      }
+      //      makeinfo.count()
+
       ttc.checkTime()
       val minsec = ttc.getElapsedTimeAsMinSeconds
       println(s" ===> LOOP : ${lcnt} INTERVAL : ${minsec}<===")
