@@ -22,43 +22,11 @@ object Test12 {
   def markDup(flag: Int) = {
     flag | 0x400
   }
-
   def markDups(sam: SAM4) = {
     val marked = markDup(sam.flag.toInt).toString
     val rebuild = SAM4(sam.qname, marked, sam.rname, sam.pos, sam.others)
     rebuild
   }
-
-//  def parseDBG(str: String): String = {
-//    val srcData = str
-//    val spl = str.split("\\s+")
-//
-//    if (spl.length < 4) {
-//      return "DBG less string: " + str
-//    }
-//
-//    val qname = spl(0)
-//    val flag = spl(1)
-//    val rname = spl(2)
-//
-//
-//    val pos1 = spl(3)
-//    val pos = try {
-//      pos1.toLong
-//    } catch {
-//      case e: Exception => {
-//        e.printStackTrace()
-//        0L
-//      }
-//    }
-//    val others = spl.slice(4, spl.length)
-//
-//    val t1 = SAM4(qname, flag, rname, pos, others)
-//    val t2 = getString(t1)
-//
-//    t2
-//  }
-
   def parseToSAM(str: String): SAM4 = {
     val srcData = str
     val spl = str.split("\\s+")
@@ -80,12 +48,11 @@ object Test12 {
 
     SAM4(qname, flag, rname, pos, others)
   }
-
-//  def getString(sam: SAM4) = {
-//    val arr: Array[String] = Array(sam.qname, sam.flag, sam.rname, sam.pos.toString) ++ sam.others
-//    val res = s"${arr.mkString("\t")}"
-//    res
-//  }
+  def getString(sam: SAM4) = {
+    val arr: Array[String] = Array(sam.qname, sam.flag, sam.rname, sam.pos.toString, sam.others)
+    val res = s"${arr.mkString("\t")}"
+    res
+  }
 
   def main(args: Array[String]) {
     if (args.length < 3) {
@@ -210,13 +177,13 @@ object Test12 {
           samIter
         }
       markedSamWithCounts.cache() //marked sam
-
-      //      val markedCount = markedSamWithCounts.map(_._2._1).fold(0)(_+_)
-      //      val thisRecords = markedSamWithCounts.map(_._1).count()
-      //      totalRecords += thisRecords
-      //      println("deduped : "+markedCount)
-      //      println("Total Records : " + totalRecords)
-
+//
+//      //      val markedCount = markedSamWithCounts.map(_._2._1).fold(0)(_+_)
+//      //      val thisRecords = markedSamWithCounts.map(_._1).count()
+//      //      totalRecords += thisRecords
+//      //      println("deduped : "+markedCount)
+//      //      println("Total Records : " + totalRecords)
+//
       val samWithRnameKey = markedSamWithCounts.map { record =>
         //partitioning, write
         // ._1 qname
@@ -238,46 +205,29 @@ object Test12 {
           //        res2
           res
         }
-      samWithRnameKey.cache()
-
+//      samWithRnameKey.cache()
+//
       val voutPath = s"$outPath/loop${"%03d".format(lcnt)}"
       val rpart = new RangePartitioner(partNum, samWithRnameKey)
       val rdd2 = samWithRnameKey.partitionBy(rpart)
-      val df = rdd2.map(x => (x._2.rname, x._2)).toDF
-      val ss = df.write.partitionBy("_1").sortBy("pos").format("csv").option("sep", "\n").save(voutPath)
+      val df = rdd2.map(x => x)
 
 
-      //        .mapPartitions { Itr =>
-      ////          val head = Seq(broadcastHeader.value.mkString("\n")).iterator
-      //          val res = Itr.toSeq.sortBy(_.pos).iterator
-      //          (res)
-      //        }
-      //
-      //      rdd2.cache()
-      //      val voutPath = s"$outPath/loop${"%03d".format(lcnt)}"
-      //
-      //      val rdd3 = rdd2.map(x => getString(x)).mapPartitions { itr =>
-      //        val head = Seq(broadcastHeader.value.mkString("\n")).iterator
-      //        (head ++ itr)
-      //      }.saveAsTextFile(voutPath)
-
-      //      val makeinfo = rdd2.mapPartitionsWithIndex { (idx, sam) =>
-      //        if (!sam.isEmpty) {
-      //          val rnames = sam.map(x => x.rname).toSeq.distinct.mkString(",")
-      //          val partitionNo = "%05d".format(idx)
-      //          val dirPath = s"${ablsolFileOutputPath}/loop${"%03d".format(lcnt)}".replaceAll("//", "/")
-      //          val curPath = s"${dirPath}/part.info".replaceAll("//", "/")
-      //          new File(dirPath).mkdirs()
-      //          val partInfoFile = new FileWriter(curPath, true)
-      //          partInfoFile.append(s"part-${partitionNo}\t${rnames}\n")
-      //          partInfoFile.flush()
-      //          partInfoFile.close()
-      //        }
-      //        sam
-      //      }
-      //
-      //      makeinfo.count()
-      samWithRnameKey.unpersist()
+//  .mapPartitions{ x =>
+//    val head = Seq(broadcastHeader.value.mkString("\n")).iterator
+//    val rname = x.map{ x =>
+//      (x._1, getString(x._2))
+//    }
+//
+//    rname ++ head
+//
+//    val col2 = x.map(_._2)
+//    val res = (head ++ col2)
+//    x
+//  }
+//  .map(x => (x._1, getString(x._2))).toDF
+      val ss = df.write.partitionBy("_1")
+        .format("csv").option("sep", "\n").save(voutPath)
 
       ttc.checkTime()
       val minsec = ttc.getElapsedTimeAsMinSeconds
