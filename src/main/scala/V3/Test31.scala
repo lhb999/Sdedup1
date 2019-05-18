@@ -187,9 +187,13 @@ object Test31 {
 
       val total_num_samrecords = rnameCounts.map(_._2).fold(0)(_+_)
       val expected_num_samrecords_partition = total_num_samrecords /partNum
+      val collected = rnameCounts.collectAsMap()
       val rnameCountsMapBC =
-        sc.broadcast(rnameCounts.collectAsMap()
+        sc.broadcast(collected
           .map(x => (x._1, get_num_keys_rname(x._2/expected_num_samrecords_partition))))
+
+      println("expected_num_samrecords_partition : "+expected_num_samrecords_partition)
+      println(rnameCountsMapBC.value.mkString("\n"))
 
 
       val markedSamWithCounts = sc.textFile(currentSamfileList.mkString(","), partNum)
@@ -204,21 +208,31 @@ object Test31 {
           (rname_key,  Seq(sam))
         }.partitionBy(hashPtnr).flatMap(x => x._2)
         .mapPartitionsWithIndex{ (idx, sam) =>
-          if(!sam.isEmpty){
-            val rnames = sam.map(x => x.rname).toSeq.distinct.mkString(",")
-            val partitionNo = "%05d".format(idx)
-            val dirPath = s"${ablsolFileOutputPath}/loop${"%03d".format(lcnt)}".replaceAll("//", "/")
-            val curPath = s"${dirPath}/part.info".replaceAll("//", "/")
-            new File(dirPath).mkdirs()
-            val partInfoFile = new FileWriter(curPath, true)
-            partInfoFile.append(s"part-${partitionNo}\t${rnames}\n")
-            partInfoFile.flush()
-            partInfoFile.close()
-          }
-          sam.toSeq.sortBy(_.pos).map(x => getString(x)).iterator
+          val iter = sam.toSeq.sortBy(_.pos).iterator
+          iter
+
         }
+
+      markedSamWithCounts.cache()
+
       val voutPath = s"$outPath/loop${"%03d".format(lcnt)}"
-      markedSamWithCounts.saveAsTextFile(voutPath)
+      markedSamWithCounts.map(x => getString(x)).saveAsTextFile(voutPath)
+
+      markedSamWithCounts.mapPartitionsWithIndex{ (idx, sam) =>
+        if (!sam.isEmpty) {
+          val rnames = sam.map(x => x.rname).toSeq.distinct.mkString(",")
+          val partitionNo = "%05d".format(idx)
+          val dirPath = s"${ablsolFileOutputPath}/loop${"%03d".format(lcnt)}".replaceAll("//", "/")
+          val curPath = s"${dirPath}/part.info".replaceAll("//", "/")
+          new File(dirPath).mkdirs()
+          val partInfoFile = new FileWriter(curPath, true)
+          partInfoFile.append(s"part-${partitionNo}\t${rnames}\n")
+          partInfoFile.flush()
+          partInfoFile.close()
+        }
+        sam
+      }.count()
+      markedSamWithCounts.unpersist()
       ttc.checkTime()
       val minsec = ttc.getElapsedTimeAsMinSeconds
       println(s" ===> LOOP : ${lcnt} INTERVAL : ${minsec}<===")
