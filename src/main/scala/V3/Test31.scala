@@ -147,7 +147,7 @@ object Test31 {
       }.filter(x => x._2._2 > 0)
 
 //    val key = key1.flatMap(x => (x._2._1)).map(x => (x, 0)).collectAsMap()
-    val key = key1.flatMap(x => (x._2._1)).collect().toSet
+    val key = key1.repartition(partNum).flatMap(x => (x._2._1)).collect().toSet
     println("키 로드 완료.")
     val bKey = sc.broadcast(key)
 
