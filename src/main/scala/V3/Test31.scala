@@ -105,6 +105,7 @@ object Test31 {
 
     val accum = sc.longAccumulator("My Accumulator")
 
+    val hashPtnr = new HashPartitioner(partNum)
     println("다음 파일에서 헤더를 읽습니다. "+ filePath + "/Output0.samsbl")
     val loadHeader = sc.textFile(filePath + "/Output0.samsbl", partNum).filter(_.startsWith("@"))
 
@@ -117,18 +118,18 @@ object Test31 {
     val keyPathRegex = filePath + "/*.key"
     println("다음 경로에서 중복제거 키 파일을 읽습니다. "+ keyPathRegex)
 
-    val key3 = sc.textFile(keyPathRegex).flatMap(_.split("\n"))
-      .map { x =>
-        val spl = x.split("\t")
-        val qname = spl(0)
-        val dedupKey = spl(1)
-        (dedupKey, (qname, 0))
-      }.reduceByKey { (a, b) =>
-      val v = a._2 + b._2 + 1
-      val res = (a._1, v)
-      res
-    }.collectAsMap()
-    key3
+//    val key3 = sc.textFile(keyPathRegex).flatMap(_.split("\n"))
+//      .map { x =>
+//        val spl = x.split("\t")
+//        val qname = spl(0)
+//        val dedupKey = spl(1)
+//        (dedupKey, (qname, 0))
+//      }.reduceByKey { (a, b) =>
+//      val v = a._2 + b._2 + 1
+//      val res = (a._1, v)
+//      res
+//    }.collectAsMap()
+//    key3
 
 //    val key1 = sc.textFile(keyPathRegex, partNum).flatMap(_.split("\n"))
     val key1 = sc.textFile(keyPathRegex).flatMap(_.split("\n"))
@@ -137,7 +138,7 @@ object Test31 {
         val qname = spl(0)
         val dedupKey = spl(1).toLong
         (dedupKey, (Seq(qname), 0))
-      }
+      }.partitionBy(hashPtnr)
       .reduceByKey { (a, b) =>
         val v = a._2 + b._2 + 1
         val res1 = a._1 ++ b._1
@@ -145,7 +146,8 @@ object Test31 {
         res
       }.filter(x => x._2._2 > 0)
 
-    val key = key1.flatMap(x => (x._2._1)).map(x => (x, 0)).collectAsMap()
+//    val key = key1.flatMap(x => (x._2._1)).map(x => (x, 0)).collectAsMap()
+    val key = key1.flatMap(x => (x._2._1)).collect().toSet
     println("키 로드 완료.")
     val bKey = sc.broadcast(key)
 
@@ -175,7 +177,6 @@ object Test31 {
 
     var totalRecords = 0L
 
-    val hashPtnr = new HashPartitioner(partNum)
 
     def get_num_keys_rname(value:Int) = {
       val res =
@@ -231,7 +232,7 @@ object Test31 {
         .mapPartitions{ record =>
           val bcMap = bKey.value
           val res = record.map{ x =>
-            if(bcMap.isDefinedAt(x._1)) {
+            if(bcMap.contains(x._1)) {
               accum.add(1)
               x._2.map(x => markDups(x))
             }
