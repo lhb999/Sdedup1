@@ -53,7 +53,7 @@ class TimeChecker {
       val res = ((timers.last - timers.head) / 1000).toInt
     val min = res / 60
     val sec = res % 60
-    val ms = s"${min}m ${sec}s"
+    val ms = s"${min}m ${sec}s (${res})s"
     ms
   }
 }

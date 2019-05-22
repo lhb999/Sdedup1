@@ -8,7 +8,7 @@ import org.apache.spark.{HashPartitioner, SparkConf, SparkContext}
 
 import scala.sys.process._
 
-object Test31 {
+object Test35 {
   case class SAM4(qname:String, flag:String, rname:String, pos:Long, others:Array[String])
   def markDup(flag:Int) = { flag | 0x400 }
   def markDups(sam:SAM4) = {
@@ -77,7 +77,7 @@ object Test31 {
   def slashRmver(path:String ) = {
     val improvedPath =
       if(path.endsWith("/")) path.substring(0, path.length-1)
-        else path
+      else path
     improvedPath
   }
   def main(args: Array[String]) {
@@ -105,6 +105,7 @@ object Test31 {
 
     val accum = sc.longAccumulator("My Accumulator")
 
+
     println("다음 파일에서 헤더를 읽습니다. "+ filePath + "/Output0.samsbl")
     val loadHeader = sc.textFile(filePath + "/Output0.samsbl", partNum).filter(_.startsWith("@"))
 
@@ -130,7 +131,7 @@ object Test31 {
     }.collectAsMap()
     key3
 
-//    val key1 = sc.textFile(keyPathRegex, partNum).flatMap(_.split("\n"))
+    //    val key1 = sc.textFile(keyPathRegex, partNum).flatMap(_.split("\n"))
     val key1 = sc.textFile(keyPathRegex).flatMap(_.split("\n"))
       .map { x =>
         val spl = x.split("\t")
@@ -175,7 +176,7 @@ object Test31 {
 
     var totalRecords = 0L
 
-    val hashPtnr = new HashPartitioner(partNum)
+
 
     def get_num_keys_rname(value:Int) = {
       val res =
@@ -284,7 +285,7 @@ object Test31 {
       ttc.checkTime()
       val minsec = ttc.getElapsedTimeAsMinSeconds
 
-//      println(s" ===> Number of Marked Qname : ${accum.value} / ${totalRecords}")
+      //      println(s" ===> Number of Marked Qname : ${accum.value} / ${totalRecords}")
       println(s" ===> LOOP : ${lcnt} INTERVAL : ${minsec}<===")
       println("\n\n")
       lcnt+=1

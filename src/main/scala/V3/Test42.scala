@@ -8,7 +8,7 @@ import org.apache.spark.{HashPartitioner, SparkConf, SparkContext}
 
 import scala.sys.process._
 
-object Test31 {
+object Test42 {
   case class SAM4(qname:String, flag:String, rname:String, pos:Long, others:Array[String])
   def markDup(flag:Int) = { flag | 0x400 }
   def markDups(sam:SAM4) = {
@@ -77,7 +77,7 @@ object Test31 {
   def slashRmver(path:String ) = {
     val improvedPath =
       if(path.endsWith("/")) path.substring(0, path.length-1)
-        else path
+      else path
     improvedPath
   }
   def main(args: Array[String]) {
@@ -94,43 +94,15 @@ object Test31 {
     val sc = new SparkContext(sparkConf)
 
 
-    val filePath = slashRmver(args(0))
-    val outPath = slashRmver(args(1))
-    val partNum = args(2).toInt
-    val stride = args(3).toInt
-    val log = LogManager.getRootLogger
-
-    val tc = new TimeChecker
-    tc.checkTime("start")
-
-    val accum = sc.longAccumulator("My Accumulator")
-
-    println("다음 파일에서 헤더를 읽습니다. "+ filePath + "/Output0.samsbl")
-    val loadHeader = sc.textFile(filePath + "/Output0.samsbl", partNum).filter(_.startsWith("@"))
-
-    ppp.setDic(loadHeader.collect())
-    println("헤더가 로드 완료.")
     val broadcastMap = sc.broadcast(ppp.getDict)
     val broadcastHeader = sc.broadcast(ppp.getHead)
     //    println(s"partitions1 : ${loadHeader.getNumPartitions}")
+    val hashPtnr = new HashPartitioner(partNum)
 
     val keyPathRegex = filePath + "/*.key"
     println("다음 경로에서 중복제거 키 파일을 읽습니다. "+ keyPathRegex)
 
-    val key3 = sc.textFile(keyPathRegex).flatMap(_.split("\n"))
-      .map { x =>
-        val spl = x.split("\t")
-        val qname = spl(0)
-        val dedupKey = spl(1)
-        (dedupKey, (qname, 0))
-      }.reduceByKey { (a, b) =>
-      val v = a._2 + b._2 + 1
-      val res = (a._1, v)
-      res
-    }.collectAsMap()
-    key3
-
-//    val key1 = sc.textFile(keyPathRegex, partNum).flatMap(_.split("\n"))
+    //    val key1 = sc.textFile(keyPathRegex, partNum).flatMap(_.split("\n"))
     val key1 = sc.textFile(keyPathRegex).flatMap(_.split("\n"))
       .map { x =>
         val spl = x.split("\t")
@@ -138,16 +110,16 @@ object Test31 {
         val dedupKey = spl(1).toLong
         (dedupKey, (Seq(qname), 0))
       }
-      .reduceByKey { (a, b) =>
+      .reduceByKey { (a, b) => //가상해시테이블-버킷 구현 필요
         val v = a._2 + b._2 + 1
         val res1 = a._1 ++ b._1
         val res = (res1, v)
         res
-      }.filter(x => x._2._2 > 0)
+      }.filter(x => x._2._2 > 0).flatMap(x => (x._2._1)).map(x => (x, Seq.empty[SAM4]))
+      .partitionBy(hashPtnr) //qname, Int
 
-    val key = key1.flatMap(x => (x._2._1)).map(x => (x, 0)).collectAsMap()
-    println("키 로드 완료.")
-    val bKey = sc.broadcast(key)
+
+    key1.cache()
 
     tc.checkTime("key loaded")
     tc.printElapsedTime()
@@ -175,7 +147,6 @@ object Test31 {
 
     var totalRecords = 0L
 
-    val hashPtnr = new HashPartitioner(partNum)
 
     def get_num_keys_rname(value:Int) = {
       val res =
@@ -227,17 +198,15 @@ object Test31 {
         .filter(!_.startsWith("@"))
         .map(x => parseToSAM(x))
         .map(x => (x.qname, Seq(x)))
-        .reduceByKey(_++_)
+        .partitionBy(hashPtnr)
+        .union(key1)
+        .reduceByKey{ (a,b) =>
+          accum.add(1)
+          val c = (a++b).map(x => markDups(x))
+          c
+        }
         .mapPartitions{ record =>
-          val bcMap = bKey.value
-          val res = record.map{ x =>
-            if(bcMap.isDefinedAt(x._1)) {
-              accum.add(1)
-              x._2.map(x => markDups(x))
-            }
-            else x._2
-          }
-          res
+          record.map(_._2)
         }.flatMap(x => x)
         .map{sam =>
           val rkey = rKey(sam.rname, sam.pos)
@@ -245,7 +214,6 @@ object Test31 {
         }.partitionBy(customPtnr)
 
       reducedByQname.cache()
-
       val cnts = reducedByQname.count()
 
       totalRecords += cnts
@@ -284,7 +252,7 @@ object Test31 {
       ttc.checkTime()
       val minsec = ttc.getElapsedTimeAsMinSeconds
 
-//      println(s" ===> Number of Marked Qname : ${accum.value} / ${totalRecords}")
+      //      println(s" ===> Number of Marked Qname : ${accum.value} / ${totalRecords}")
       println(s" ===> LOOP : ${lcnt} INTERVAL : ${minsec}<===")
       println("\n\n")
       lcnt+=1

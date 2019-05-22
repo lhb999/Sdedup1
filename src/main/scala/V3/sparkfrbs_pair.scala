@@ -8,7 +8,7 @@ import scala.collection.mutable.ArrayBuffer
 import scala.io.Source
 
 
-object sparkfrbs_v2 {
+object sparkfrbs_pair {
   def main(args : Array[String]): Unit = {
     if(args.length < 6) {
       println("usage : FreebayesPath SamtoolsPath ReferencefilePath WorkDir VcfOutputDirPath PartitionNumb RegionSize")
@@ -60,6 +60,8 @@ object sparkfrbs_v2 {
         cnt = cnt + 1
       }
     }
+
+
     val fileList = (s"find $WorkDir -name *.bam -type f -ls").!!.split("\n")
     val cmdList2 = fileList.map{ file =>
       val fullpath = file.split("\\s+")(10)
@@ -67,6 +69,8 @@ object sparkfrbs_v2 {
       val cmd = cmdList.filter(_.name==rname).map(x => (fullpath, x))
       cmd
     }.flatMap(x => x)
+
+
 
     println(s"run freebayes ...")
     println(s"total number of commands : "+cmdList2.length)
@@ -83,29 +87,35 @@ object sparkfrbs_v2 {
     //        s"--report-genotype-likelihood-max --allele-balance-priors-off -f $Ref $filename -r ${fasta.name}:${fasta.start}-${fasta.end}"))
     //    }
 
-
-    val res = sc.parallelize(cmdList2, ExecutorNumb*10).mapPartitionsWithIndex{ (idx, iter) =>
+    val res2 = sc.parallelize(cmdList, ExecutorNumb*10).mapPartitionsWithIndex{ (idx, iter) =>
       val pi = TaskContext.getPartitionId()
       iter.foreach { data =>
-        val filename = data._1
-        val fasta = data._2
+        val files = cmdList2.filter(_._2.equals(data)).map(_._1)
+        val filenames = files.mkString(" ")
+        val fasta = data
+//        val filename = data._1
+//        val fasta = data._2
         val vcfout = (s"$OutputDirPath${fasta.idx.formatted("%06d")}.${pi.formatted("%010d")}.${fasta.name}.${fasta.start.formatted("%013d")}-${fasta.end.formatted("%013d")}.vcf")
-        if(!(new File(s"$filename.bai")).exists()) s"${SamtoolsPath} index $filename".!!
-        val outputdir = (new File(s"$OutputDirPath"))
-        if(!outputdir.exists())  outputdir.mkdirs()
+        files.foreach{ filename =>
+          if(!(new File(s"$filename.bai")).exists()) s"${SamtoolsPath} index $filename".!!
+        }
+        println(((s"$FreebayesPath -v $vcfout --pooled-discrete --pooled-continuous --min-alternate-fraction 0.1 --genotype-qualities " +
+          s"--report-genotype-likelihood-max --allele-balance-priors-off -f $Ref $filenames -r ${fasta.name}:${fasta.start}-${fasta.end}")))
         ((s"$FreebayesPath -v $vcfout --pooled-discrete --pooled-continuous --min-alternate-fraction 0.1 --genotype-qualities " +
-          s"--report-genotype-likelihood-max --allele-balance-priors-off -f $Ref $filename -r ${fasta.name}:${fasta.start}-${fasta.end}")).!
+          s"--report-genotype-likelihood-max --allele-balance-priors-off -f $Ref $filenames -r ${fasta.name}:${fasta.start}-${fasta.end}")).!
       }
       iter
     }
 
-    res.count()
+
+    res2.count()
 
 
     helper.checkTime()
     helper.printElapsedTime()
   }
 }
+
 
 
 
