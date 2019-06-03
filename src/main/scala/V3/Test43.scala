@@ -8,7 +8,7 @@ import org.apache.spark.{HashPartitioner, SparkConf, SparkContext}
 
 import scala.sys.process._
 
-object Test41 {
+object Test43 {
   case class SAM4(qname:String, flag:String, rname:String, pos:Long, others:Array[String])
   def markDup(flag:Int) = { flag | 0x400 }
   def markDups(sam:SAM4) = {
@@ -104,32 +104,82 @@ object Test41 {
     tc.checkTime("start")
 
     val accum = sc.longAccumulator("My Accumulator")
-
-    println("다음 파일에서 헤더를 읽습니다. " + filePath + "/Output0.samsbl")
-    val loadHeader = sc.textFile(filePath + "/Output0.samsbl", partNum).filter(_.startsWith("@"))
-
-    ppp.setDic(loadHeader.collect())
-    println("헤더 로드 완료.")
-    val broadcastMap = sc.broadcast(ppp.getDict)
-    val broadcastHeader = sc.broadcast(ppp.getHead)
+//
+//    println("다음 파일에서 헤더를 읽습니다. " + filePath + "/Output0.samsbl")
+//    val loadHeader = sc.textFile(filePath + "/Output0.samsbl", partNum).filter(_.startsWith("@"))
+//
+//    ppp.setDic(loadHeader.collect())
+//    println("헤더 로드 완료.")
+//    val broadcastMap = sc.broadcast(ppp.getDict)
+//    val broadcastHeader = sc.broadcast(ppp.getHead)
+//    //    println(s"partitions1 : ${loadHeader.getNumPartitions}")
     val hashPtnr = new HashPartitioner(partNum)
 
-    val keyPathRegex = filePath + "/*.key"
+    val keyPathRegex = filePath + "/*"
     println("다음 경로에서 중복제거 키 파일을 읽습니다. " + keyPathRegex)
-    val key1 = sc.textFile(keyPathRegex, partNum).flatMap(_.split("\n")).map { x =>
+
+    //    val key1 = sc.textFile(keyPathRegex, partNum).flatMap(_.split("\n"))
+    val key1 = sc.textFile(keyPathRegex).flatMap(_.split("\n"))
+    key1.cache()
+    println(key1.count()) //금방끝남
+    val key2 = key1.map { x =>
       val dedupKey = x
       (dedupKey, 0)
-    }.reduceByKey(_+_+1).filter(_._2 > 1)
-      .repartition(partNum).saveAsTextFile(filePath+"/filtered")
+    }.partitionBy(hashPtnr)
+      .reduceByKey(_+_+1)
+      .filter(_._2 > 1)
+      .saveAsTextFile("test/world-9")
+//    key2.cache()
+//    println(key2.count()) //금방끝남
+//    //    val key3 = key2.partitionBy(hashPtnr)
+//    val key3 = key2.repartition(partNum)
+//    key3.cache()
+//    //    val tt = key3.mapPartitionsWithIndex{ (idx, iter) =>
+//    //      println(s"part${idx} : ${iter.length}")
+//    //      iter
+//    //    }
+//    //    tt.count()
+//    println(key3.count())
+//    //금방끝남
+//    val key4 = key3.reduceByKey { (a, b) =>
+//      val v = a._2 + b._2 + 1
+//      val res1 = a._1 + "\n" + b._1
+//      val res = (res1, v)
+//      res
+//    }
+//
+//    //      .repartition(partNum)
+//    //      .saveAsTextFile("test/hello") //오래걸림
+//    key4.cache()
+//    println(key4.first()) //금방끝남
+//    key4.filter(_._2._2 > 0).repartition(partNum).saveAsTextFile("/test/catt")
+//
+//    val tt = key4.mapPartitionsWithIndex { (idx, iter) =>
+//      println(s"part${idx} : ${iter.length}")
+//      iter
+//    }
+//    tt.count()
 
-    val key2 = sc.textFile(filePath+"/filtered/*", partNum).flatMap(_.split("\n")).map { x =>
-      val dedupKey = x
-      dedupKey
-    }.collect().toSet
+
+//    println(key4.count()) //오래걸림
+    //
+    //    key4.cache()
+    //    val key5 = key4.filter(x => x._2._2 > 0)
+    //    key5.cache()
+    //    println(key5.count())//오래걸림
+    //      key5.flatMap(x => (x._2._1))
+
+
+    //    println(s"key counts : ${key1.count()}")
+    //    val ts = key1.collect()
 
     tc.checkTime()
     tc.printElapsedTime()
+    //      .partitionBy(hashPtnr) //qname, Int
 
+
+    //    key1.cache()
+    //
     tc.checkTime("key loaded")
     tc.printElapsedTime()
     //

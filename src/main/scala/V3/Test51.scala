@@ -1,18 +1,17 @@
 package V3
 
 
-import java.io.{ByteArrayInputStream, File, FileWriter}
-import java.util.Base64
+import java.io._
+import java.nio.file.{Files, Paths}
 
 import org.apache.log4j.LogManager
 import org.apache.spark.{HashPartitioner, SparkConf, SparkContext}
-import sun.misc.IOUtils
 
 import scala.collection.immutable.Stream.Empty
+import scala.io.Source
 import scala.sys.process._
-import scala.util.Try
 
-object Test31 {
+object Test51 {
   case class SAM4(qname:String, flag:String, rname:String, pos:Long, others:Array[String])
   def markDup(flag:Int) = { flag | 0x400 }
   def markDups(sam:SAM4) = {
@@ -55,7 +54,9 @@ object Test31 {
     val spl = str.split("\\s+")
 
     val dedupkey = spl(0)
-    val qname = spl(1).split('@').last
+    val qname =
+      if(spl(1).contains('@')) spl(1).split('@').last
+      else spl(1)
     val flag = spl(2)
     val rname = spl(3)
     val pos1 = spl(4)
@@ -118,25 +119,33 @@ object Test31 {
 
     val broadcastMap = sc.broadcast(ppp.getDict)
     val broadcastHeader = sc.broadcast(ppp.getHead)
-
-
-    //    println(s"partitions1 : ${loadHeader.getNumPartitions}")
+    println(s"partitions1 : ${loadHeader.getNumPartitions}")
 
     val keyPathRegex = filePath + "/*.key"
     println("다음 경로에서 중복제거 키 파일을 읽습니다. "+ keyPathRegex)
     val key1 = sc.textFile(keyPathRegex, partNum).flatMap(_.split("\n")).map { x =>
       val spl = x.split("\t")
       val dedupKey = spl(1)
-      val qname = spl(1).split('@').last
+      val qname =
+        if(spl(0).contains('@')) spl(1).split('@').last.hashCode
+        else spl(0).hashCode
       (dedupKey, (0, qname))
     }.reduceByKey{(a,b) =>
       val cnt = a._1 + b._1 + 1
       val qname = a._2
       (cnt, qname)
-    }.filter(_._2._1 > 0).map{x => (x._1, x._2._2)}
+    }.filter(_._2._1 > 0)
+      .map(x => (x._1, x._2._2))
+      .repartition(partNum)
+      .map(x => s"${x._1}\t${x._2}")
+      .collect()
+    //          .saveAsTextFile(filePath+"/filteredKey/")
 
-    key1.cache()
 
+    //    val mocmap = Map[String, Int]()
+    //    val bKey = sc.broadcast(keymap)
+    //    tc.checkTime("key loaded")
+    //    tc.printElapsedTime()
 
     println(s"SAM파일 입력 경로는 다음과 같습니다. ${filePath}")
     val samPathRegex = filePath + "*.sbl"
@@ -147,6 +156,16 @@ object Test31 {
       .replaceAll("//","/")
 
     println(s"절대경로로 치환했을 때 다음과 같습니다. ${ablsolFileInputPath}\n\n")
+
+
+
+    val keypath = ablsolFileInputPath+"/filteredKey.txt"
+
+    val pw = new PrintWriter(new File(keypath))
+
+    key1.foreach(x => pw.println(x))
+    pw.flush()
+    pw.close
 
     val list = s"ls ${ablsolFileInputPath}".!!.split("\n")
     val samList = list.filter(_.endsWith("sbl"))
@@ -163,7 +182,6 @@ object Test31 {
       val res =
         if(value == 0 ) 1
         else value
-
       res
     }
 
@@ -200,39 +218,45 @@ object Test31 {
 
       val customPtnr = new customPtnr(collected2.toSeq, partNum)
 
+
+
       val reducedByQname = sc.textFile(currentSamfileList.mkString(","), partNum)
         .filter(!_.startsWith("@"))
         .map(x => (parseToSAM(x)))
-        .reduceByKey(_++_)
-        .leftOuterJoin(key1)
         .mapPartitions{ record =>
-        val part =
-        if(!record.isEmpty) {
-          val rx = record.map{ x =>
-            val seqSam = x._2._1
-            val firstK = x._2._2 //키가 중복
-            val res = if(firstK.isDefined && !seqSam.head.qname.equals(firstK.get)) {
-              seqSam.map{ x =>
+          val key = Source.fromFile(keypath).getLines().map { x =>
+            val spl = x.split("\t")
+            val dedupKey = spl(0)
+            val qname = spl(1).toInt
+            (dedupKey, qname)
+          }.toMap
+
+          val bcMap = key
+          val res = record.map{ x =>
+            if(bcMap.isDefinedAt(x._1) && !bcMap.getOrElse(x._1, 0).equals(x._2.head.qname.hashCode)) {
+              x._2.map{x =>
                 accum.add(1)
                 markDups(x)
               }
             }
-            else seqSam
-            res
+            else x._2
           }
-          rx
+          res
         }
-        else record.map(_._2._1)
-        part
-      }.flatMap(x => x)
+        .flatMap(x => x)
         .map{sam =>
           val rkey = rKey(sam.rname, sam.pos)
           (rkey,  Seq(sam))
         }.partitionBy(customPtnr)
+
       reducedByQname.cache()
+
       val cnts = reducedByQname.count()
+
       totalRecords += cnts
-      println(s" ===> Number of Marked Qname : ${accum.value} / ${totalRecords}")
+
+
+
       val voutPath = s"$outPath/loop${"%03d".format(lcnt)}"
       reducedByQname.flatMap(x => x._2).mapPartitions{sam =>
         if(!sam.isEmpty){
@@ -274,3 +298,6 @@ object Test31 {
     println(s" ===> TOTAL ELAPSED TIME : ${minsec}<===")
   }
 }
+
+
+

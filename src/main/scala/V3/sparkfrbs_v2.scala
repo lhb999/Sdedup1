@@ -90,9 +90,9 @@ object sparkfrbs_v2 {
         val filename = data._1
         val fasta = data._2
         val vcfout = (s"$OutputDirPath${fasta.idx.formatted("%06d")}.${pi.formatted("%010d")}.${fasta.name}.${fasta.start.formatted("%013d")}-${fasta.end.formatted("%013d")}.vcf")
+        println(filename)
         if(!(new File(s"$filename.bai")).exists()) s"${SamtoolsPath} index $filename".!!
-        val outputdir = (new File(s"$OutputDirPath"))
-        if(!outputdir.exists())  outputdir.mkdirs()
+
         ((s"$FreebayesPath -v $vcfout --pooled-discrete --pooled-continuous --min-alternate-fraction 0.1 --genotype-qualities " +
           s"--report-genotype-likelihood-max --allele-balance-priors-off -f $Ref $filename -r ${fasta.name}:${fasta.start}-${fasta.end}")).!
       }

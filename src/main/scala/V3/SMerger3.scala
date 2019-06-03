@@ -19,10 +19,6 @@ object SMerger3 {
                      sambam:String="bam", thread:Int=4):mutable.Iterable[String] = {
     //println(s"serch partname : ${partname}")
     val rnameFiles = rmap.get(rname).get
-    if(rname.equals("chr8_gl000197_random")) {
-      println(rnameFiles.mkString("\n"))
-    }
-//    val files1 = s"find $dirname -type f ! -size 0 -name $rnameFiles".!!.split("\n")
     val fileLen = rnameFiles.length
     val arr = new ArrayBuffer[String]()
     var i = 0;
@@ -39,11 +35,7 @@ object SMerger3 {
             start + size
           }
         val filex = rnameFiles.slice(start, end).mkString(" ")
-        val cmd = s"$samtools merge -@ ${thread} -O ${sambam} $dirname/${"%06d".format(fileIdx)}-$rname.merged $filex"
-        println(cmd)
-//        println(s"size info : ${fileLen}, loop : $loop/${fileLen/5},slice from ${last} to ${lsize}")
-//        println(files1.slice(last, lsize).mkString("\n"))
-        //        println(s"")
+        val cmd = s"$samtools merge -@ ${thread} -c -p -O ${sambam} $dirname/${"%06d".format(fileIdx)}-$rname.merged $filex"
         start =  end
         loop += 1
         fileIdx += 1
@@ -52,14 +44,10 @@ object SMerger3 {
     arr
   }
   def setCmdWithDir2(rnameWithPath:String, files:String, samtools:String, sambam:String="bam") = {
-    val cmd = s"$samtools merge -@ 10 -O ${sambam} $rnameWithPath.${sambam} $files"
+    val cmd = s"$samtools merge -@ 10 -c -p -O ${sambam} $rnameWithPath.${sambam} $files"
     cmd
   }
-  def setCmdSplitPart(rnameWithPath:String, files:String, samtools:String, sambam:String="bam") = {
-    val xmd = s"$samtools split -@ 4 -O ${sambam} $rnameWithPath.${sambam} $files"
-    val cmd = s"$samtools merge -@ 10 -O ${sambam} $rnameWithPath.${sambam} $files"
-    cmd
-  }
+
   def main(args: Array[String]): Unit = {
     if(args.length < 4) {
       println("usage sparkfrbs [dirPath] [samtoolsPath] [sam or bam] [samtools thread num]")
@@ -90,7 +78,6 @@ object SMerger3 {
       for (line <- Source.fromFile(filename).getLines) {
         if (cnt == 0) {
           println(s"file name is ${filename}")
-          println(s"curdir is ${curdir}")
           cnt += 1
         }
         if(!line.isEmpty) {
@@ -120,10 +107,7 @@ object SMerger3 {
 
     var i = 0
     var toggle = true
-
-
-    println(s"rnames #: ${rnameMap.keys.size}: \n"+rnameMap.keys.mkString("\n"))
-
+//    println(s"rnames #: ${rnameMap.keys.size}: \n"+rnameMap.keys.mkString("\n"))
     rnameMap.keys.foreach{ rname =>
       val res = setCmdWithDir1(dirPath, rname, samtools, rnameMap, sambam, thread)
       res.foreach(x => cmdArr.+=(x))
@@ -167,21 +151,32 @@ object SMerger3 {
       }
     }
 
-    val mergeSeq = map3.filter(_._2.length > 1).toSeq
-    val moveSeq = map3.filter(_._2.length == 1).toSeq
+    val mergeSeq = map3.filter(_._2.length > 1).toSeq.sortBy(_._1)
+    val moveSeq = map3.filter(_._2.length == 1).toSeq.map{x =>
+      val isU = if(x._1.equals("*")) "zzzzz"
+      else x._1
+      (isU, x._2)
+    }.sortBy(_._1)
+
+    println(moveSeq.map(_._1).mkString("\n"))
+    var cnt = 0
 
     val cmdList2 = mergeSeq.map{ x =>
       val rname = x._1
       val files = x._2.mkString(" ")
-      val rnameWithPath = s"$dirPath/$rname"
+      val rnameWithPath = s"$dirPath/Output$cnt"
+      cnt += 1
       val res = setCmdWithDir2(rnameWithPath, files, samtools, sambam)
       res
     }
 
+
     val cmdList3 = moveSeq.foreach{ x =>
       val rname = x._1
+      val cntx = cnt
       val file = x._2.mkString(" ")
-      val rnameWithPath = s"$dirPath/$rname"
+      val rnameWithPath = s"$dirPath/Output$cntx"
+      cnt += 1
       val cmd = s"mv $file $rnameWithPath.${sambam}"
       //println(cmd)
       cmd.!

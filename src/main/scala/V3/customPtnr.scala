@@ -33,8 +33,8 @@ class customPtnr(rmap: Seq[(String, Int)], override val numPartitions: Int) exte
 //      map.+((record._1, accVal))
       map.+=((record._1, tmpRecord))
     }
-    println("Builded Map")
-    println(map.mkString("\n"))
+//    println("Builded Map")
+//    println(map.mkString("\n"))
 
     map.toMap
   }
@@ -47,7 +47,9 @@ class customPtnr(rmap: Seq[(String, Int)], override val numPartitions: Int) exte
       s % numPartitions
     }
     case k : rKey => {
-      val t = rnameMap.get(k.rname).get
+//      val t = rnameMap.get(k.rname).get
+//      case class acMapVal(idx:Int, rPartNum:Int, accVal:Int)
+      val t = rnameMap.getOrElse(k.rname, acMapVal(1,1,1))
       val tk = (k.pos % t.rPartNum)
       val tkk = tk + t.accVal
 

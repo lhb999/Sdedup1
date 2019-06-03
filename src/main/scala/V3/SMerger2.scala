@@ -109,7 +109,7 @@ object SMerger2 {
           val partname = spl(0)
           val rnames = spl(1).split(",")
           if(rnames.length > 1) {
-            println(s"INFO :: ${partname} has more than 2 rname : ${rnames.mkString(", ")}")
+//            println(s"INFO :: ${partname} has more than 2 rname : ${rnames.mkString(", ")}")
           }
           rnames.foreach{ rname =>
             if(!rnameMap.isDefinedAt(partname)) {
@@ -209,13 +209,20 @@ object SMerger2 {
       }
     }
 
-    val mergeSeq = map3.filter(_._2.length > 1).toSeq
-    val moveSeq = map3.filter(_._2.length == 1).toSeq
+    val mergeSeq = map3.filter(_._2.length > 1).toSeq.sortBy(_._1)
+    val moveSeq = map3.filter(_._2.length == 1).toSeq.map{ x =>
+//      val isunmap = if(x._1.contains("*")) ""
+      x
+    }
+
+
+    var cnt = 0
 
     val cmdList2 = mergeSeq.map{ x =>
       val rname = x._1
+      cnt += 1
       val files = x._2.mkString(" ")
-      val rnameWithPath = s"$dirPath/$rname"
+      val rnameWithPath = s"$dirPath/Output$cnt"
       val res = setCmdWithDir2(rnameWithPath, files, samtools, sambam)
       res
     }
@@ -223,7 +230,8 @@ object SMerger2 {
     val cmdList3 = moveSeq.foreach{ x =>
       val rname = x._1
       val file = x._2.mkString(" ")
-      val rnameWithPath = s"$dirPath/$rname"
+      val rnameWithPath = s"$dirPath/$cnt"
+      cnt +=1
       val cmd = s"mv $file $rnameWithPath.${sambam}"
       //println(cmd)
       cmd.!

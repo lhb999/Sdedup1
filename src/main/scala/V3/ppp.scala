@@ -26,12 +26,12 @@ object ppp {
           rg = true
         }
       }
-      else if(line.startsWith("@PG")) {
-        if(!pg) {
-          header.+=(line)
-          pg = true
-        }
-      }
+//      else if(line.startsWith("@PG")) {
+//        if(!pg) {
+//          header.+=(line)
+//          pg = true
+//        }
+//      }
     }
   }
 
